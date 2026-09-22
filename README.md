@@ -15,3 +15,5 @@ This test build does not yet transmit location to GTR remotely. A protected serv
 ## Build
 
 Run the GitHub Actions workflow and download the GTR-Motorcycles-Test-APK artifact.
+
+Build verification requested.
