@@ -19,6 +19,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.EditText;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
@@ -72,6 +73,25 @@ public class MainActivity extends Activity {
         handler.post(refresh);
     }
     private void requestAndStart(Button button) {
+        String pairing = getSharedPreferences("tracking", MODE_PRIVATE).getString("pairing_code", "");
+        if (pairing.isEmpty()) {
+            final EditText input = new EditText(this);
+            input.setHint("8-character code");
+            input.setSingleLine(true);
+            new AlertDialog.Builder(this)
+                .setTitle("Activate rental security")
+                .setMessage("GTR uses your phone location during the active rental to help protect the rented motorcycle. Only the GTR owner can view it. Android will keep a visible notification while tracking is active. Enter the code supplied by GTR.")
+                .setView(input)
+                .setPositiveButton("CONTINUE", (dialog, which) -> {
+                    String value = input.getText().toString().trim().toUpperCase();
+                    if (value.length() == 8) {
+                        getSharedPreferences("tracking", MODE_PRIVATE).edit().putString("pairing_code", value).apply();
+                        requestAndStart(button);
+                    } else Toast.makeText(this, "Enter the 8-character GTR code.", Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton("CANCEL", null).show();
+            return;
+        }
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_REQUEST);
             return;
@@ -100,6 +120,7 @@ public class MainActivity extends Activity {
             return;
         }
         Intent service = new Intent(this, LocationService.class);
+        service.putExtra("pairing_code", pairing);
         try {
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(service); else startService(service);
             status.setText("GPS background tracking is active");
@@ -112,6 +133,7 @@ public class MainActivity extends Activity {
     }
     private void stopTracking(Button button) {
         stopService(new Intent(this, LocationService.class));
+        getSharedPreferences("tracking", MODE_PRIVATE).edit().remove("pairing_code").apply();
         status.setText("GPS background tracking is off");
         button.setText("START GPS");
     }
