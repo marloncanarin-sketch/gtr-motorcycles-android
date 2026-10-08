@@ -12,12 +12,17 @@ import android.os.Bundle;
 import android.os.IBinder;
 import java.text.DateFormat;
 import java.util.Date;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 public class LocationService extends Service implements LocationListener {
     public static volatile boolean isRunning = false;
     private static final String CHANNEL = "gtr_tracking";
     private static final int NOTIFICATION_ID = 27;
     private LocationManager manager;
+    private String pairingCode;
     @Override public void onCreate() {
         super.onCreate();
         isRunning = true;
@@ -37,6 +42,11 @@ public class LocationService extends Service implements LocationListener {
         }
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && intent.getStringExtra("pairing_code") != null) {
+            pairingCode = intent.getStringExtra("pairing_code");
+            getSharedPreferences("tracking", MODE_PRIVATE).edit().putString("pairing_code", pairingCode).apply();
+        }
+        if (pairingCode == null) pairingCode = getSharedPreferences("tracking", MODE_PRIVATE).getString("pairing_code", "");
         return START_STICKY;
     }
     @Override public void onLocationChanged(Location location) {
@@ -44,6 +54,29 @@ public class LocationService extends Service implements LocationListener {
         String value = location.getLatitude() + "," + location.getLongitude();
         getSharedPreferences("tracking", MODE_PRIVATE).edit().putString("last_location", value).putLong("last_location_time", System.currentTimeMillis()).apply();
         ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID, notification("Location updated at " + time));
+        upload(location);
+    }
+    private void upload(Location location) {
+        if (pairingCode == null || pairingCode.isEmpty()) return;
+        final String token = pairingCode;
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL("https://gtr-motorcycles-rental.marloncanarin.chatgpt.site/api/gps/update");
+                connection = (HttpURLConnection)url.openConnection();
+                connection.setRequestMethod("POST"); connection.setConnectTimeout(12000); connection.setReadTimeout(12000); connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Authorization", "Bearer " + token);
+                String body = "{\"latitude\":" + location.getLatitude() + ",\"longitude\":" + location.getLongitude() + ",\"accuracy\":" + location.getAccuracy() + ",\"recordedAt\":" + System.currentTimeMillis() + "}";
+                try (OutputStream output = connection.getOutputStream()) { output.write(body.getBytes(StandardCharsets.UTF_8)); }
+                int response = connection.getResponseCode();
+                if (response >= 200 && response < 300) getSharedPreferences("tracking", MODE_PRIVATE).edit().putString("upload_status", "Sent to GTR").apply();
+                else if (response == 401 || response == 403) {
+                    getSharedPreferences("tracking", MODE_PRIVATE).edit().putString("upload_status", "Rental tracking ended or code invalid").remove("pairing_code").apply();
+                    stopSelf();
+                }
+            } catch (Exception error) { getSharedPreferences("tracking", MODE_PRIVATE).edit().putString("upload_status", "Waiting for internet").apply(); }
+            finally { if (connection != null) connection.disconnect(); }
+        }).start();
     }
     private Notification notification(String text) {
         Intent open = new Intent(this, MainActivity.class);
