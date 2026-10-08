@@ -25,9 +25,19 @@ public class LocationService extends Service implements LocationListener {
         startForeground(NOTIFICATION_ID, notification("Waiting for GPS location…"));
         manager = (LocationManager)getSystemService(LOCATION_SERVICE);
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 15000, 10f, this);
-            manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 30000, 25f, this);
+            try {
+                if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10000, 5f, this);
+                if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 15000, 10f, this);
+                Location last = manager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (last == null) last = manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                if (last != null) onLocationChanged(last);
+            } catch (SecurityException error) {
+                stopSelf();
+            }
         }
+    }
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        return START_STICKY;
     }
     @Override public void onLocationChanged(Location location) {
         String time = DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date());
